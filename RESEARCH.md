@@ -44,6 +44,12 @@ at the root rather than under a vendor directory. It is not a system prompt,
 and it is the single credential-shaped hit in section 4.1, so it is named here
 rather than left inside a denominator.
 
+The corpus also contains one markdown **symlink**,
+`Meta/muse-agent/skills/artifacts/testing/SKILL.md`, pointing at
+`../references/verification.md`. The target is itself in the corpus, so
+following the link counts one document twice. All four walkers skip symlinks
+explicitly, on every platform. See section 6 for why that is not a detail.
+
 Largest: Meta 512 files, Anthropic 466, OpenAI 432, GLM 90, xAI 76, Google 63.
 Median prompt 5,794 characters; largest 987,902.
 
@@ -826,6 +832,41 @@ improved. File counts from here on, and CI asserts each one.
   taxonomy trips it, and `--write` on prose produces nonsense. This repository's
   own README and this file both fail their own linter for that reason. The
   behaviour is pinned by a test rather than papered over.
+
+### Every published rate was a Windows number
+
+This was found by CI, on the first run after the figure was added, and nothing
+run locally could have found it.
+
+The corpus contains one markdown symlink whose target is also in the corpus.
+Git writes a symlink as a small text file on a Windows checkout, so the link
+measured 29 bytes there, fell under the 200-byte stub threshold, and was
+skipped. On Linux it resolved to its 2,724-byte target and was counted.
+
+```
+                 Windows        Linux (CI)
+  files            1,699          1,700
+  C1          874  51.4%     875  51.5%
+  C6          919  54.1%     920  54.1%
+```
+
+Every rate in every document was computed on Windows. The number happened to
+be **correct**, because the Linux count was double-counting that document, but
+it was correct by accident: a stub file falling under a size threshold is not
+a deduplication policy.
+
+Two things make this the most instructive failure in the project. First, the
+environment was the variable, and a reproducibility claim that is only true on
+one filesystem is not a reproducibility claim. Second, it was invisible to
+every local check: the census, the figure, the tests and the gates all agreed
+with each other on this machine, because they all made the same wrong
+assumption. **The gates only caught it once something ran somewhere else.**
+
+Symlinks are now skipped by name in one shared predicate, `is_corpus_file`,
+used by the census, the drift analysis, the sampler and the figure. The
+regression test creates a symlink and asserts it is not counted; it skips on
+Windows, where creating one needs a privilege this account does not have, and
+runs on Linux, which is the platform that exhibited the bug.
 
 ### One self-inflicted failure worth recording
 

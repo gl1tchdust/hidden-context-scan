@@ -106,7 +106,7 @@ def sign_test(pos: int, neg: int) -> float:
 def collect_series(root: pathlib.Path) -> dict[tuple, list]:
     series: dict[tuple, list] = collections.defaultdict(list)
     for p in sorted(root.rglob("*.md")):
-        if ".git" in p.parts or not p.is_file():
+        if not scan.is_corpus_file(p):
             continue
         try:
             if p.stat().st_size < MIN_BYTES:

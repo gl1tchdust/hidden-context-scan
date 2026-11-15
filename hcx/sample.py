@@ -20,7 +20,10 @@ import pathlib
 import random
 import sys
 
-MIN_BYTES = 200
+# One stub threshold and one definition of a corpus file, shared with the
+# census. Three copies of MIN_BYTES meant the sampler could draw from a
+# different population than the one being measured.
+from hcx.scan import MIN_BYTES, is_corpus_file
 
 
 def vendor_of(path: pathlib.Path, root: pathlib.Path) -> str:
@@ -31,9 +34,12 @@ def vendor_of(path: pathlib.Path, root: pathlib.Path) -> str:
 def collect(root: pathlib.Path, max_bytes: int) -> dict[str, list[pathlib.Path]]:
     by_vendor: dict[str, list[pathlib.Path]] = collections.defaultdict(list)
     for p in sorted(root.rglob("*.md")):
-        if not p.is_file() or ".git" in p.parts:
+        if not is_corpus_file(p):
             continue
-        size = p.stat().st_size
+        try:
+            size = p.stat().st_size
+        except OSError:
+            continue
         if size < MIN_BYTES or size > max_bytes:
             continue
         by_vendor[vendor_of(p, root)].append(p)
@@ -53,10 +59,19 @@ def allocate(by_vendor: dict[str, list], n: int, floor: int) -> dict[str, int]:
     while sum(quota.values()) < n:
         k = max(by_vendor, key=lambda k: (exact[k] - quota[k], len(by_vendor[k])))
         quota[k] += 1
-    # And take back from the largest if the floor overshot.
+    # And take back from the largest if the floor overshot. If every vendor is
+    # already down to its floor slot, no amount of taking back reaches n, and
+    # the old `max()` over an empty sequence raised a bare ValueError from the
+    # middle of the allocator. Say what is actually wrong instead.
     while sum(quota.values()) > n:
-        k = max((k for k in quota if quota[k] > 1), key=lambda k: quota[k])
-        quota[k] -= 1
+        shrinkable = [k for k in quota if quota[k] > 1]
+        if not shrinkable:
+            raise ValueError(
+                f"--n {n} is smaller than the {len(quota)} vendors holding at "
+                f"least --floor {floor} files, and each of those needs a slot. "
+                f"Raise --n to at least {len(quota)}, or raise --floor."
+            )
+        quota[max(shrinkable, key=lambda k: quota[k])] -= 1
     return quota
 
 
@@ -97,6 +112,11 @@ def main(argv: list[str] | None = None) -> int:
         for p in rng.sample(files, k):
             picked.append(str(p.relative_to(args.corpus)).replace("\\", "/"))
     picked.sort()
+    if len(picked) < args.n:
+        # A vendor can be allocated more slots than it has files. Say so
+        # rather than quietly returning a smaller sample than was asked for.
+        print(f"warning: drew {len(picked)} of {args.n}; some vendor ran out "
+              f"of files in the size band", file=sys.stderr)
 
     if args.json:
         print(json.dumps({"seed": args.seed, "n": len(picked),
@@ -127,6 +147,18 @@ def selftest() -> None:
     assert q.get("d", 0) == 0, q
     # Asking for more than the floors require must still total exactly n.
     assert sum(allocate(fake, 4, floor=10).values()) == 4
+
+    # Regression: more floored vendors than slots used to raise a bare
+    # ValueError from `max()` over an empty sequence, inside the allocator,
+    # with nothing to tell the caller what to change.
+    crowded = {chr(97 + i): list(range(20)) for i in range(10)}
+    try:
+        allocate(crowded, 5, floor=10)
+    except ValueError as e:
+        assert "--n 5" in str(e) and "10 vendors" in str(e), e
+    else:
+        raise AssertionError("10 floored vendors cannot fit in 5 slots")
+
     print("sample selftest ok")
 
 

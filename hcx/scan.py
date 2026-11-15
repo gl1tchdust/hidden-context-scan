@@ -29,6 +29,34 @@ MIN_BYTES = 200
 MIN_CENSUS_FILES = 30
 
 
+def is_corpus_file(path: pathlib.Path) -> bool:
+    """True for a path the corpus walkers should count exactly once.
+
+    Symlinks are excluded on every platform, for two reasons.
+
+    They double-count. The primary corpus contains one markdown symlink,
+    `Meta/muse-agent/skills/artifacts/testing/SKILL.md`, pointing at
+    `../references/verification.md`, and that target is itself in the corpus.
+    Following the link counts one document twice.
+
+    Worse, they made the census platform-dependent. Git writes a symlink as a
+    small text file on a Windows checkout, so the link measured 29 bytes there
+    and fell under MIN_BYTES, while on Linux it resolved to a 2,724-byte file
+    and was counted. **Corpus A was 1,699 files on one machine and 1,700 on
+    the other, and C1 and C6 moved with it.** Every rate this repository
+    publishes was a Windows number. CI on Linux caught it; nothing local could,
+    because locally the two never disagree.
+
+    1,699 is the correct figure: the Linux count included the duplicate.
+    """
+    try:
+        if path.is_symlink() or not path.is_file():
+            return False
+    except OSError:
+        return False
+    return ".git" not in path.parts
+
+
 def read_or_none(path: pathlib.Path) -> str | None:
     """`_read`, but None instead of an exception when the file will not open.
 
@@ -87,7 +115,7 @@ def cmd_scan(args: argparse.Namespace) -> int:
 
 def _iter_files(root: pathlib.Path, pattern: str):
     for p in sorted(root.rglob(pattern)):
-        if not p.is_file() or ".git" in p.parts:
+        if not is_corpus_file(p):
             continue
         try:
             if p.stat().st_size < MIN_BYTES:

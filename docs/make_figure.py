@@ -26,7 +26,7 @@ HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent))
 
 from hcx import rules  # noqa: E402
-from hcx.scan import MIN_BYTES, read_or_none  # noqa: E402
+from hcx.scan import MIN_BYTES, is_corpus_file, read_or_none  # noqa: E402
 
 # (label, path, glob, legend note). Order is fixed and the hue follows the
 # corpus, never its rank, so adding a corpus never repaints the others.
@@ -81,7 +81,7 @@ def measure() -> tuple[dict[str, dict[str, float]], dict[str, int]]:
         n = 0
         unreadable: list[str] = []
         for p in sorted(base.rglob(glob)):
-            if ".git" in p.parts or not p.is_file():
+            if not is_corpus_file(p):
                 continue
             try:
                 if p.stat().st_size < MIN_BYTES:

@@ -262,6 +262,36 @@ def test_census_skips_an_unreadable_file_and_names_it(corpus, monkeypatch, capsy
     assert "could not be opened" in out and "blocked.md" in out
 
 
+def test_symlinks_are_never_counted(corpus, capsys):
+    """Regression, and the only defect in this repository that no local run
+    could have found.
+
+    The primary corpus contains one markdown symlink whose target is also in
+    the corpus. Git writes a symlink as a small text file on a Windows
+    checkout, so it measured 29 bytes there and fell under MIN_BYTES, while on
+    Linux it resolved to its 2,724-byte target and was counted. Corpus A was
+    1,699 files on Windows and 1,700 on Linux, and C1 and C6 moved with it.
+    Every published rate was a Windows number, right only by accident: the
+    Linux count double-counted one document.
+    """
+    target = corpus / "a.md"
+    link = corpus / "linked.md"
+    try:
+        link.symlink_to(target.name)
+    except (OSError, NotImplementedError) as e:
+        pytest.skip(f"cannot create a symlink here: {e}")
+
+    assert link.is_file(), "the link must resolve, or this proves nothing"
+    assert not scan.is_corpus_file(link), "a symlink is never a corpus file"
+    assert scan.is_corpus_file(target), "its target still is"
+
+    rc = scan.main(["census", str(corpus), "--force"])
+    assert rc == 0
+    # The link resolves to a file well over the stub threshold, so without the
+    # symlink check it would push the count from 2 to 3.
+    assert "2 files" in capsys.readouterr().out
+
+
 def test_census_credential_gate_passes_and_fails(corpus, capsys):
     """The gate that stops the credential claim rotting again.
 
