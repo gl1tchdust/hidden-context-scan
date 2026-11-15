@@ -1,0 +1,38 @@
+# gitleaks configuration.
+#
+# Every default rule is kept and none is redefined. An earlier version of this
+# file redefined `generic-api-key` in order to attach an allowlist to it, which
+# silently replaced the built-in rule and stopped a planted AWS key from being
+# caught. That is the exact failure this project is about, so it is recorded
+# here rather than quietly corrected: a control that reports clean because it
+# was broken is worse than no control.
+#
+# What remains is a global allowlist naming the fabricated tokens this
+# repository uses as test fixtures. They are allowlisted BY VALUE, not by path.
+# Allowlisting `tests/` or `hcx/rules.py` wholesale would hide a real
+# credential if one ever landed in those files; naming the exact strings means
+# anything new in the same file still fails.
+#
+# Every value below was generated for this repository and authenticates to
+# nothing.
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Fabricated credential fixtures used by the detector's own tests"
+regexTarget = "match"
+regexes = [
+  # Mixed-case token used across the credential tests.
+  '''8we2hKl3mNp0QrStUvWxYz12AbCd34Ef''',
+  # Hex token standing in for a query-string key.
+  '''9f6c8b2d4e7a1c3f5b8d0e2a4c6f8b1d3e5a7c9f''',
+  # Second token, for the several-on-one-line regression.
+  '''Qv7xM2pL9nR4tK8sW1zB6yC3dF5gH0jA''',
+  # Deliberately low-entropy strings, used to prove they are rejected.
+  '''AAAAbbbbCCCCddddEEEE1111''',
+  '''ZZZZyyyyXXXXwwwwVVVV2222''',
+  # Identifier-shaped strings, used to prove they are rejected.
+  '''DATA_APP_OWNER_EMAIL_SHA256''',
+  '''normalize_cell_value''',
+]

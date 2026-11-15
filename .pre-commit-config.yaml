@@ -1,0 +1,8 @@
+repos:
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.30.1
+    hooks:
+      - id: gitleaks
+        # The config keeps every default rule and allowlists only this
+        # repository's fabricated test fixtures, by value. See .gitleaks.toml.
+        args: ["detect", "--redact", "--config", ".gitleaks.toml"]

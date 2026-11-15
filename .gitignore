@@ -1,0 +1,35 @@
+# Fetched corpus: third-party text, pinned at run time, never vendored.
+.corpus/
+
+# Census output
+*.json.tmp
+census-out/
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.hypothesis/
+.venv/
+venv/
+
+# Secrets - never commit these. This project holds no credentials and has no
+# network code, but a stray export is one careless command away.
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.pfx
+secrets.*
+credentials.*
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# Working output of hcx.sample; regenerate with the seed in the labels file.
+sample*.json

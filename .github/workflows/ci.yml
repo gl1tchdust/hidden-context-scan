@@ -1,0 +1,153 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: tests
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - run: pip install --quiet -r requirements.txt
+      - run: python -m pytest tests/ -q
+      - name: Module selftests
+        run: |
+          python -m hcx.taxonomy
+          python -m hcx.rules
+          python -m hcx.measure --selftest
+          python -m hcx.sample --selftest
+          python -m hcx.drift --selftest
+
+  # ---------------------------------------------------------------------------
+  # Detector accuracy against hand-labelled ground truth.
+  #
+  # The labels were written by a human who read each file before the detectors
+  # were run against it. A disagreement fails this job unless it is declared in
+  # `known_misses` with a reason, so a new gap breaks the build and a known one
+  # stays visible in the confusion matrix instead of being quietly excused.
+  #
+  # Read only: the corpus is cloned and parsed, never imported or executed.
+  # ---------------------------------------------------------------------------
+  accuracy:
+    name: detector accuracy
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install --quiet -r requirements.txt
+
+      - name: Fetch the pinned corpus
+        run: ./corpus/fetch.sh
+
+      - name: Score against the labels, both splits
+        run: python -m hcx.measure --strict | tee accuracy.txt
+
+      # The holdout is the number worth quoting: it is the split the
+      # detectors were never improved against. Printed separately so a
+      # reader of the run summary sees it on its own.
+      - name: Holdout only
+        run: python -m hcx.measure --split holdout | tee holdout.txt
+
+      - name: Census over the whole corpus
+        run: python -m hcx.scan census .corpus/spl | tee census.txt
+
+      - name: Drift across model generations
+        run: python -m hcx.drift --corpus .corpus/spl | tee drift.txt
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Detector accuracy"
+            echo
+            echo '```'
+            cat accuracy.txt 2>/dev/null || echo "(no output)"
+            echo '```'
+            echo
+            echo "## Holdout (never tuned against)"
+            echo
+            echo '```'
+            cat holdout.txt 2>/dev/null || echo "(no output)"
+            echo '```'
+            echo
+            echo "## Census"
+            echo
+            echo '```'
+            cat census.txt 2>/dev/null || echo "(no output)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: accuracy
+          path: |
+            accuracy.txt
+            holdout.txt
+            census.txt
+            drift.txt
+
+  # ---------------------------------------------------------------------------
+  # The no-network guarantee, enforced rather than promised.
+  #
+  # The scanner takes file paths and has no HTTP client. A tool that cannot
+  # reach a live endpoint cannot be pointed at somebody else's product, by its
+  # author or by anyone who clones it. The test suite asserts the imports; this
+  # job asserts it again at the package level so a new dependency cannot sneak
+  # one in through a transitive import.
+  # ---------------------------------------------------------------------------
+  no-network:
+    name: no network code
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: pip install --quiet -r requirements.txt
+      - name: Assert the package imports no network library
+        run: |
+          python - <<'PY'
+          import importlib, sys
+          banned = {"socket", "http.client", "urllib.request", "requests", "httpx", "aiohttp"}
+          before = set(sys.modules)
+          for mod in ("hcx.rules", "hcx.taxonomy", "hcx.scan", "hcx.measure"):
+              importlib.import_module(mod)
+          pulled = (set(sys.modules) - before) & banned
+          if pulled:
+              raise SystemExit(f"hcx pulled in network modules: {sorted(pulled)}")
+          print("no network modules imported by hcx")
+          PY
+
+  gitleaks:
+    name: gitleaks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Install gitleaks
+        run: |
+          curl -sSfL -o /tmp/gitleaks.tar.gz \
+            https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
+          sudo install /tmp/gitleaks /usr/local/bin/gitleaks
+      - run: gitleaks detect --redact --verbose --config .gitleaks.toml
