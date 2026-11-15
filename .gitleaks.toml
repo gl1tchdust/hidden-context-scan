@@ -35,4 +35,14 @@ regexes = [
   # Identifier-shaped strings, used to prove they are rejected.
   '''DATA_APP_OWNER_EMAIL_SHA256''',
   '''normalize_cell_value''',
+  # Lowercase prefixed tokens, used to prove they are ACCEPTED. The first is
+  # promptsonar's case-021-hardcoded-secret fixture value, quoted verbatim
+  # because a regression test written against a value of our own invention is
+  # what let that bug survive. gitleaks flags both, which is the point: these
+  # are the shapes the rule could not see.
+  '''sk-live-abcdefghijklmnop1234567890''',
+  '''glpat-abcdefghijklmnopqrst''',
+  # JWT header and base64 fixtures for the `Bearer` and `Basic` schemes.
+  '''eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9''',
+  '''OHdlMmhLbDNtTnAwUXJTdFV2V3hZejEy''',
 ]

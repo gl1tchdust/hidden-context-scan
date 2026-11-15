@@ -34,9 +34,11 @@ import pathlib
 import re
 import sys
 
-from hcx import rules
+from hcx import rules, scan
+# One stub threshold, not two. The census and the drift analysis have to agree
+# on which files count, or they describe different corpora.
+from hcx.scan import MIN_BYTES
 
-MIN_BYTES = 200
 MIN_SERIES = 3           # a trend needs at least three points
 DENSITY_BASE = 10_000    # matches per 10k characters
 
@@ -129,8 +131,11 @@ def collect_series(root: pathlib.Path) -> dict[tuple, list]:
     return out
 
 
-def measure_file(path: pathlib.Path) -> dict:
-    text = path.read_text(encoding="utf-8", errors="replace")
+def measure_file(path: pathlib.Path) -> dict | None:
+    """None when the file will not open, so one bad file cannot stop a run."""
+    text = scan.read_or_none(path)
+    if text is None:
+        return None
     present = rules.categories_present(text)
     counts = {}
     for cat in rules.CATEGORIES:
@@ -145,6 +150,9 @@ def analyse(root: pathlib.Path) -> dict:
         rows = []
         for ver, p in items:
             m = measure_file(p)
+            if m is None:
+                print(f"skipped, cannot be opened: {p}", file=sys.stderr)
+                continue
             rows.append({
                 "version": ".".join(str(v) for v in ver),
                 "rank": len(rows) + 1,
@@ -154,6 +162,13 @@ def analyse(root: pathlib.Path) -> dict:
                 "density": {k: DENSITY_BASE * v / max(1, m["chars"])
                             for k, v in m["counts"].items()},
             })
+        if len(rows) < MIN_SERIES:
+            # A skipped file can drop a series below the minimum. Reporting a
+            # two-point trend because the third point would not open is how a
+            # hole in the data becomes a line in a table.
+            print(f"dropped, fewer than {MIN_SERIES} readable generations: "
+                  f"{'/'.join(x for x in key if x)}", file=sys.stderr)
+            continue
         ranks = [r["rank"] for r in rows]
         trends = {"chars": spearman(ranks, [r["chars"] for r in rows])}
         for cat in rules.CATEGORIES:

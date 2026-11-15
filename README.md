@@ -14,31 +14,100 @@ second one.
 
 ```
 50 published system prompts, read in full and hand-labelled
+                                                 95% Wilson interval
 
   C1  tool and function schemas      36/50   72%   [58%, 83%]
   C2  behavioural control logic      36/50   72%   [58%, 83%]
   C6  capability disclosure          29/50   58%   [44%, 71%]
   C5  output structure rules         19/50   38%   [26%, 52%]
-  C3  refusal and safety mechanisms  14/50   28%   [18%, 42%]
+  C3  refusal and safety mechanisms  14/50   28%   [17%, 42%]
   C4  permissions and user roles     11/50   22%   [13%, 35%]
   CRED credentials                    0/50    0%   [ 0%,  7%]
 
   at least one category present:     48/50   96%
 ```
 
-**96% disclose something. None disclose a credential, across four corpora.**
+**96% disclose something. No system prompt in any of the four corpora
+contains a live credential.**
 
-Three tools were run over the full 1,699-file corpus: gitleaks, promptsonar and
-this one. Every credential-shaped hit turned out to be a published public token,
-a programming identifier or a document slug. The one real token corpus-wide sits
-in the corpus repository's own README, which is not a system prompt. OWASP's
-critical tier for LLM08:2026 is credentials in hidden context, and across
-seventeen vendors nobody did it.
+That is the careful wording, and an earlier version of this README did not use
+it. It claimed a flat zero across all four corpora. The measurement had in
+fact been run on all four, and RESEARCH.md section 5.8 recorded it correctly
+as `0.1%, 0.1%, 0.0%, 0.0%`, directly underneath its own bold heading saying
+"Zero credentials". This README then summarised the heading and dropped the
+figures.
 
-Running [promptsonar](https://github.com/meghal86/promptsonar)'s test fixtures
-found two genuine bugs in this tool's credential rule, including a missed
-`OPENAI_API_KEY="..."`. Both are fixed and regression-tested. See
-[RESEARCH.md](RESEARCH.md) section 5.6.
+Nothing was unmeasured. A rounded percentage was printed, contradicted on the
+same page, and never read. Re-running the census over all four corpora gives
+nine shape-matches in three files, six distinct values, every one read by hand:
+
+```
+  corpus  file                            hits  verdict
+  --------------------------------------------------------------------------
+  A       the corpus repo's own              3  one real token, repeated. A
+          README.md                             sealed_token in a star-
+                                                history chart embed URL.
+                                                Repository metadata, not a
+                                                prompt.
+  B1      .../P0tS3c/testing for            2  one fabricated `Basic` auth
+          command injection (RCE).md            example, on two lines, in a
+                                                penetration-testing cheat
+                                                sheet.
+  B1      .../P0tS3c/                        4  pasted lab console output:
+          UsingMetasploit.md                    one LSA hash, and three
+                                                Windows secret NAMES
+                                                (aspnet_WP_PASSWORD,
+                                                _SC_aspnet_state,
+                                                _SC_LicenseService) rather
+                                                than values.
+  B2, C   nothing                            0
+```
+
+Seven of those nine were visible to the detector as published. Two needed the
+`Authorization: Bearer` fix, and that fix took B1 from one file to two without
+moving the printed `0.1%` at all, which is the clearest argument against
+reporting three files out of 3,649 as a percentage.
+
+Both B1 files are third-party cheat sheets attached to a custom GPT as
+knowledge, not prompts. So the finding holds, and the honest version of it is
+narrower than the one first published: credentials do not appear in system
+prompts, they appear in the documents people staple to them.
+
+CI now re-measures this on all four corpora on every push and fails if any
+count changes, because a claim that nothing re-measures is exactly how the
+first version of it went wrong:
+
+```bash
+python -m hcx.scan census .corpus/spl --expect-cred 1
+```
+
+Three tools were run over corpus A: gitleaks, promptsonar and this one. The
+two credential detectors do not overlap: gitleaks finds a pair of xAI tokens
+that this tool downgrades after reading the prose around them, and this tool
+finds the README token that gitleaks misses. Neither alone gives the right
+answer. OWASP's critical tier for LLM08:2026 is credentials in hidden context,
+and across seventeen vendors no prompt did it.
+
+Four bugs have been found in this tool's credential rule. Three came from
+[promptsonar](https://github.com/meghal86/promptsonar)'s test fixtures, and
+the fourth from a review of this repository:
+
+- a missed `OPENAI_API_KEY="..."`, because an underscore is a word character
+  so `\b` could never match before `API`
+- six kebab-case document slugs read as credentials, created by fixing the
+  first one
+- `Authorization: Bearer <token>`, the commonest form a credential ever takes,
+  matched nothing, because the rule required the value to start immediately
+  after the colon
+- **the fix for the first bug never worked on the fixture it was named
+  after.** It was regression-tested with a mixed-case value invented for the
+  test; the fixture's real value is `sk-live-abcdefghijklmnop1234567890`,
+  lowercase and hyphen-joined, which the name check discarded. The test
+  passed and the fixture stayed silent, and this repository claimed it was
+  fixed for months.
+
+All four are fixed, and the fixture's own text is the regression test now.
+[RESEARCH.md](RESEARCH.md) section 5.6 has the full account.
 
 ## These rates describe one population, and say so
 
@@ -46,56 +115,93 @@ Three more corpora were fetched, pinned and measured with the same detectors.
 Zero exact-content overlap with the first, so they are independently assembled.
 
 ```
-  corpus                     n       C1      C2      C3      C6
-  ---------------------------------------------------------------
-  A   frontier vendors    1699    51.4%   50.5%   20.7%   54.1%
-  B1  custom GPT authors  1691     4.6%   13.5%   33.4%    7.8%
-  B2  vendor, 2nd curator  165    43.6%   58.2%   40.0%   35.2%
-  C   coding agents         94    61.7%   76.6%   61.7%   76.6%
+  corpus                     n       C1      C2      C3      C6     CRED
+  -----------------------------------------------------------------------
+  A   frontier vendors    1699    51.4%   50.5%   20.7%   54.1%    1 file
+  B1  custom GPT authors  1691     4.6%   13.5%   33.4%    7.8%    2 files
+  B2  vendor, 2nd curator  165    43.6%   58.2%   40.0%   35.2%    0
+  C   coding agents         94    61.7%   76.6%   61.7%   76.6%    0
 ```
 
 C1 runs from **4.6% to 61.7%** depending on who wrote the prompt. Length
-explains a factor of two; the gap is a factor of 78 on density.
+explains a factor of 2.2; the pooled C1 density gap is 6.1x. RESEARCH.md
+section 5.8 gives both density definitions, because the mean of per-file rates
+makes that gap look like 78x and an earlier version of this line quoted only
+that number.
 
 So "51.4% of system prompts disclose tool schemas" is not a fact about system
 prompts. It is a fact about frontier vendor prompts, and it is wrong by an order
 of magnitude for the prompts most people write. B2 is the control: same
 population, different curator, rates in the same region.
 
-One result transfers cleanly: **zero credentials across 3,649 prompts, four
-corpora, four licences.**
+One result transfers: across 3,649 files, four corpora and four licences,
+**three files carry a credential-shaped string and none of the three is a
+system prompt.** CRED is a file count rather than a rate because three out of
+3,649 is not a rate, it is three files, and all three are listed above with a
+hand verdict.
 
 ```bash
 ./corpus/fetch-comparison.sh      # all three, pinned
 ```
 
 [RESEARCH.md](RESEARCH.md) section 5.8 has the full table, the length controls,
-and a composition bias it exposed in our own corpus: 71.5% of it is agent skill
-files rather than model prompts, and the two differ 5.7x on refusal language.
+and a composition bias it exposed in our own corpus: 71.9% of it is agent skill
+files rather than model prompts, and the two differ 5.0x on refusal language.
 
 ## The number this repository is most sure of
 
-Not a rate. A gap.
+Not a rate. A gap. All six categories, because an earlier version of this
+table showed only the three that got worse.
 
 ```
-                DEV (tuned on)        HOLDOUT (sealed)
-  cat     precision    recall     precision    recall    delta P
-  ----------------------------------------------------------------
-  C3          1.000     0.667         0.800     0.800     -0.200
-  C4          1.000     0.571         0.667     0.500     -0.333
-  C6          1.000     0.833         0.818     0.818     -0.182
+                    DEV (tuned on)       HOLDOUT (sealed)
+  cat         precision     n         precision     n      95% CI
+  ------------------------------------------------------------------------
+  C1              1.000    13             1.000     8    [0.68, 1.00]
+  C2              1.000    13             1.000     6    [0.61, 1.00]
+  C3              1.000     6             0.800     5    [0.38, 0.96]
+  C4              1.000     4             0.667     3    [0.21, 0.94]
+  C5              1.000     8             1.000     2    [0.34, 1.00]
+  C6              1.000    15             0.818    11    [0.52, 0.95]
+  ------------------------------------------------------------------------
+  pooled          1.000    59             0.886    35    [0.74, 0.95]
+
+  n is the number of predictions the rate divides by, not the number of
+  labelled files. Recall: 0.656 dev, 0.564 holdout, pooled.
 ```
 
 The 50 labelled files were split 30/20 by seed. The detectors were improved
 against the 30. The 20 were not looked at in between.
 
-**Precision is 1.000 on every category on the split the detectors were fitted
-to, and falls to 0.667 on the split they were not.** Recall moves both ways;
-C5 collapses from 0.727 to 0.250.
+**Precision on the sealed split is 0.886, pooled over 35 predictions. Three
+categories of six fall, three do not, and the worst cell is 0.667 over three
+predictions, which its interval of [0.21, 0.94] says is barely a number at
+all.** Recall moves both ways; C5 collapses from 0.727 to 0.250.
 
-Nothing was done to engineer that. It is simply what happens, and it is why
-this README quotes the holdout column. A tool that publishes its accuracy
-without saying which data produced it is publishing the dev column.
+Two corrections to how this was first written, both of which flattered the
+thesis rather than the tool:
+
+- The table showed C3, C4 and C6 and omitted C1, C2 and C5, where precision
+  did not move. 0.667 was quoted as the holdout figure when it is the worst
+  of six cells and the pooled figure is 0.886. RESEARCH.md section 5.2 always
+  carried all six rows and said "falls as far as 0.667", so this was a README
+  that compressed an honest document until the compression took a side.
+- No interval was printed here, while the census table above carries Wilson
+  intervals on n=50. Error bars appeared where the denominator was large and
+  vanished where it was three. `hcx.measure` now prints the denominator and
+  the interval for every rate it computes, and the guard that should have
+  caught this tested the wrong denominator: it checked the 20 labelled files,
+  not the 3 predictions.
+
+One more thing this table cannot show on its own. The dev column is 1.000
+because the detectors were tuned until no false positive remained on dev, so
+it is a construction, not a measurement. The honest reading of the gap is not
+"1.000 fell to 0.886". It is "four false positives in thirty-five predictions
+on files the detectors had never seen".
+
+Nothing was engineered to produce that. It is why this README quotes the
+holdout column. A tool that publishes its accuracy without saying which data
+produced it is publishing the dev column.
 
 ## 60-second quickstart
 
@@ -188,9 +294,18 @@ python -m hcx.drift --corpus .corpus/spl
     5.5                        477,020        10          0.2
 ```
 
-Nine or ten matches across six generations, while the prompt grows 5.3x.
-OpenAI's main gpt line sits at exactly three across six consecutive versions.
-The majority direction is downward at all four vendors independently.
+Five of those six generations sit at nine or ten matches while the prompt grows
+5.3x. The sixth, 4.6, has 23, and it is also the largest file in the series at
+813 KB, so its density is the lowest of the six. The outlier is in the table
+rather than smoothed out of the sentence, which an earlier version of this line
+did.
+
+OpenAI's main gpt line sits at exactly three across seven consecutive versions,
+4.1 through 5.5, including the one where the prompt jumps to 359,517
+characters. C3 density falls in 11 of 13 series and is the only category with a
+significant trend. The direction is downward at all four vendors, but Google
+and xAI contribute one series each, so two of those four cells are a single
+file pair rather than a vendor trend.
 
 **Read this as a hypothesis, not a finding.** Thirteen tests were run and a
 Bonferroni threshold is 0.0038; both significant results are p = 0.0225, an
@@ -251,7 +366,23 @@ state of the work rather than something to hide by loosening a label.
 
 Running the measurement found two detector bugs (`\s+` spanning newlines under
 `re.M`; `UNIQUE` matching the word "unique"), one rule that had to be deleted
-rather than patched, and five labels of my own that were wrong. All of it is in
+rather than patched, and five labels of my own that were wrong.
+
+A later review of the repository found six more, and they are listed here
+rather than quietly fixed, because the ones that matter were not in the
+detectors:
+
+| | |
+|---|---|
+| **a number measured, then contradicted twice** | "zero credentials across four corpora" was measured, and RESEARCH.md recorded it correctly as 0.1% twice. Section 4.3 of the same document still said 0, and this README said zero. Nine hits in three files, seven of them visible to the published detector. |
+| **verdicts never actually made** | "every hit resolves to a published public token or an identifier" described none of the hits it was attached to. It was carried over from an earlier finding about two different files. |
+| **a selected table** | the precision table showed the three categories that got worse and omitted the three that did not. |
+| **a guard on the wrong number** | the minimum-sample check tested labelled files, not the denominator of the rate it was protecting. |
+| **a missed credential form** | `Authorization: Bearer <token>` matched nothing. |
+| **a walk that died** | one file an antivirus filter refused to open ended a 1,693-file census with no output at all. It now skips, counts and names the file. |
+| **a count and a line ending** | `migrate --write` reported every reference as rewritten, and rewrote every line ending on Windows. |
+
+Each one is now a regression test. All of it is in
 [RESEARCH.md](RESEARCH.md), including the corpus pin, the sampling bias, the
 declared gaps and what would change the conclusions.
 

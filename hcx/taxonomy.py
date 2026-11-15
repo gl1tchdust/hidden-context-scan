@@ -192,7 +192,11 @@ def migrate(text: str) -> tuple[str, list[Reference]]:
     Anything provisional or unknown is reported and left alone, because a
     migration that guesses is worse than one that abstains.
     """
-    refs = [r for r in find_references(text) if r.suggestion and "or" not in r.suggestion]
+    # STALE is exactly the resolvable set: AMBIGUOUS carries an either-or
+    # suggestion and everything else carries none. Selecting on the verdict
+    # says that, where the old test for "or" in the suggestion string only
+    # happened to say it.
+    refs = [r for r in find_references(text) if r.verdict == STALE]
     out_lines = text.splitlines(keepends=True)
     # Rewrite right to left on each line so earlier column offsets stay valid.
     by_line: dict[int, list[Reference]] = {}

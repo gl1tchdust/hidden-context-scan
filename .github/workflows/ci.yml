@@ -69,6 +69,28 @@ jobs:
       - name: Census over the whole corpus
         run: python -m hcx.scan census .corpus/spl | tee census.txt
 
+      # RESEARCH.md section 4.3 and the corpus A row of the four-corpus table
+      # in 5.8 quote these six counts. They were hand-copied once and one of
+      # them, the CRED cell, then sat stale through several detector changes
+      # while another section of the same document carried the right answer.
+      # A published number that nothing re-derives is the defect this
+      # repository keeps finding in itself, so it is checked here.
+      - name: The counts RESEARCH.md publishes must be the counts measured
+        run: |
+          set -euo pipefail
+          grep -qF "1699 files, at least 200 bytes each" census.txt
+          for want in "C1      874 / 1699" "C2      858 / 1699" \
+                      "C3      351 / 1699" "C4      152 / 1699" \
+                      "C5      415 / 1699" "C6      919 / 1699" \
+                      "CRED      1 / 1699"; do
+            grep -qF "$want" census.txt || {
+              echo "census no longer reports: $want"
+              echo "Update RESEARCH.md 4.3 and 5.8 deliberately, then this step."
+              exit 1
+            }
+          done
+          echo "all seven published corpus A counts reproduce"
+
       - name: Drift across model generations
         run: python -m hcx.drift --corpus .corpus/spl | tee drift.txt
 
@@ -106,6 +128,44 @@ jobs:
             drift.txt
 
   # ---------------------------------------------------------------------------
+  # The credential claim, measured on every corpus it is claimed over.
+  #
+  # The README says no system prompt in four corpora contains a live
+  # credential, and three files carry a credential-shaped string. That claim
+  # was once computed on corpus A alone and generalised to the other three,
+  # which is the worst mistake this repository has made. The counts below are
+  # the hand-judged result; a change in any of them fails this job, so the
+  # claim cannot rot without someone editing a number on purpose.
+  #
+  # Read only: four public repositories are cloned at pinned commits, parsed,
+  # and never imported, executed or redistributed.
+  # ---------------------------------------------------------------------------
+  credentials:
+    name: credential census, all four corpora
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install --quiet -r requirements.txt
+      - run: ./corpus/fetch.sh
+      - run: ./corpus/fetch-comparison.sh
+
+      # A: frontier vendor prompts. The one hit is the corpus repo's own
+      #    README.md, a sealed_token in a star-history chart URL.
+      - run: python -m hcx.scan census .corpus/spl --expect-cred 1
+      # B1: custom GPT authors. Two hits, both third-party penetration-testing
+      #     cheat sheets attached as knowledge documents, not prompts.
+      - run: python -m hcx.scan census .corpus/bigprompt/CustomInstructions --expect-cred 2
+      # B2: vendor prompts, second curator. The control.
+      - run: python -m hcx.scan census .corpus/bigprompt/SystemPrompts --expect-cred 0
+      # C: coding agents, scanned as *.txt.
+      - run: python -m hcx.scan census .corpus/aitools --glob '*.txt' --expect-cred 0
+
+  # ---------------------------------------------------------------------------
   # The no-network guarantee, enforced rather than promised.
   #
   # The scanner takes file paths and has no HTTP client. A tool that cannot
@@ -126,15 +186,23 @@ jobs:
       - name: Assert the package imports no network library
         run: |
           python - <<'PY'
-          import importlib, sys
+          import importlib, pathlib, sys
+          # Every module in the package, discovered rather than listed. The
+          # listed form checked four of six: hcx.drift and hcx.sample were
+          # outside it, so the job named "no network code" would have passed
+          # a network import in either of them.
           banned = {"socket", "http.client", "urllib.request", "requests", "httpx", "aiohttp"}
+          pkg = pathlib.Path("hcx")
+          mods = sorted(f"hcx.{p.stem}" for p in pkg.glob("*.py")
+                        if p.stem != "__init__")
+          assert len(mods) >= 6, f"expected the whole package, found {mods}"
           before = set(sys.modules)
-          for mod in ("hcx.rules", "hcx.taxonomy", "hcx.scan", "hcx.measure"):
+          for mod in mods:
               importlib.import_module(mod)
           pulled = (set(sys.modules) - before) & banned
           if pulled:
               raise SystemExit(f"hcx pulled in network modules: {sorted(pulled)}")
-          print("no network modules imported by hcx")
+          print(f"no network modules imported by {len(mods)} hcx modules: {mods}")
           PY
 
   gitleaks:
@@ -144,10 +212,17 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+      # The digest is pinned, not just the version tag. A release asset can be
+      # replaced; this step installs a binary with sudo, so it verifies first.
+      # Taken from the release's own gitleaks_8.30.1_checksums.txt.
       - name: Install gitleaks
+        env:
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
         run: |
+          set -euo pipefail
           curl -sSfL -o /tmp/gitleaks.tar.gz \
             https://github.com/gitleaks/gitleaks/releases/download/v8.30.1/gitleaks_8.30.1_linux_x64.tar.gz
+          echo "$GITLEAKS_SHA256  /tmp/gitleaks.tar.gz" | sha256sum --check --strict
           tar -xzf /tmp/gitleaks.tar.gz -C /tmp gitleaks
           sudo install /tmp/gitleaks /usr/local/bin/gitleaks
       - run: gitleaks detect --redact --verbose --config .gitleaks.toml

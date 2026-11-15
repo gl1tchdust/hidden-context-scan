@@ -21,12 +21,13 @@ from __future__ import annotations
 
 import argparse
 import collections
+import math
 import pathlib
 import sys
 
 import yaml
 
-from hcx import rules
+from hcx import rules, scan
 
 HERE = pathlib.Path(__file__).resolve().parent
 LABELS = HERE / "labels" / "sample.yml"
@@ -65,7 +66,13 @@ def score(labels: dict, corpus: pathlib.Path,
         if not target.is_file():
             problems.append(f"missing from corpus: {rel}")
             continue
-        text = target.read_text(encoding="utf-8", errors="replace")
+        text = scan.read_or_none(target)
+        if text is None:
+            # Not scored either way. A label whose file will not open is a
+            # hole in the measurement, so it is reported, never counted as
+            # agreement.
+            problems.append(f"cannot be opened: {rel}")
+            continue
         present = rules.categories_present(text)
         truth = entry.get("categories", {})
 
@@ -94,6 +101,38 @@ def score(labels: dict, corpus: pathlib.Path,
     return stats, problems
 
 
+def wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
+    """95% Wilson score interval for k successes in n trials.
+
+    Wilson rather than the normal approximation because every denominator
+    here is small and several are at or near their bound, where the normal
+    interval runs past 0 or 1 and stops meaning anything.
+    """
+    if n == 0:
+        return 0.0, 1.0
+    p = k / n
+    den = 1 + z * z / n
+    centre = (p + z * z / (2 * n)) / den
+    half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / den
+    return max(0.0, centre - half), min(1.0, centre + half)
+
+
+def _ratio(k: int, n: int) -> str:
+    """A rate, its denominator and its interval, or nothing at all.
+
+    The denominator is printed because precision over three predictions and
+    precision over thirty are different claims that format identically. The
+    interval is printed for the same reason. This is the fix for a real
+    mistake: MIN_LABELS used to gate on the number of labelled files, which
+    is 20 on the holdout, while precision's denominator is tp+fp, which is 3
+    for C4. The guard passed and 0.667 was printed naked, then quoted.
+    """
+    if n == 0:
+        return f"{'n/a':>9s} {'':>12s}"
+    lo, hi = wilson(k, n)
+    return f"{k / n:.3f} n={n:<3d} [{lo:.2f}, {hi:.2f}]"
+
+
 def report(stats: dict, labels: dict, split: str = "all") -> None:
     n_files = sum(1 for f in labels["files"]
                   if split == "all" or f.get("split", "dev") == split)
@@ -102,25 +141,36 @@ def report(stats: dict, labels: dict, split: str = "all") -> None:
     print(f"labelled files: {n_files}"
           + (f" of a target {target}" if target and split == "all" else "") + tag)
     print()
-    print(f"  {'cat':5s} {'tp':>4s} {'fp':>4s} {'fn':>4s} {'tn':>4s}   precision   recall")
-    print("  " + "-" * 60)
+    print(f"  {'cat':5s} {'tp':>3s} {'fp':>3s} {'fn':>3s} {'tn':>3s}   "
+          f"{'precision':<22s} {'recall':<22s}")
+    print("  " + "-" * 74)
+    agg = collections.Counter()
     for key in [c.key for c in rules.CATEGORIES] + ["CRED"]:
         c = stats.get(key, collections.Counter())
         tp, fp, fn, tn = c["tp"], c["fp"], c["fn"], c["tn"]
+        agg.update({"tp": tp, "fp": fp, "fn": fn})
         labelled = tp + fp + fn + tn
         if labelled < MIN_LABELS:
-            p = r = f"n={labelled}"
-            print(f"  {key:5s} {tp:4d} {fp:4d} {fn:4d} {tn:4d}   {p:>9s}   {r:>7s}")
-        else:
-            p = f"{tp / (tp + fp):.3f}" if (tp + fp) else "n/a"
-            r = f"{tp / (tp + fn):.3f}" if (tp + fn) else "n/a"
-            print(f"  {key:5s} {tp:4d} {fp:4d} {fn:4d} {tn:4d}   {p:>9s}   {r:>7s}")
+            cell = f"{f'n={labelled} labelled':<22s}"
+            print(f"  {key:5s} {tp:3d} {fp:3d} {fn:3d} {tn:3d}   {cell} {cell}")
+            continue
+        print(f"  {key:5s} {tp:3d} {fp:3d} {fn:3d} {tn:3d}   "
+              f"{_ratio(tp, tp + fp):<22s} {_ratio(tp, tp + fn):<22s}")
+    print("  " + "-" * 74)
+    print(f"  {'all':5s} {agg['tp']:3d} {agg['fp']:3d} {agg['fn']:3d} {'':3s}   "
+          f"{_ratio(agg['tp'], agg['tp'] + agg['fp']):<22s} "
+          f"{_ratio(agg['tp'], agg['tp'] + agg['fn']):<22s}")
     print()
-    if any(sum(stats.get(k, {}).values()) < MIN_LABELS
+    print("  n= is the denominator of that rate, not the number of labelled")
+    print("  files. Read the interval before quoting the rate: a precision over")
+    print("  three predictions and one over thirty format identically and are")
+    print("  not the same claim. The `all` row pools the cells across")
+    print("  categories, which is the only row here with a denominator large")
+    print("  enough to carry a tight interval.")
+    if any(sum(stats.get(k, collections.Counter()).values()) < MIN_LABELS
            for k in [c.key for c in rules.CATEGORIES] + ["CRED"]):
-        print(f"  Categories showing n= have fewer than {MIN_LABELS} labels. A rate over")
-        print("  that few samples is noise with a decimal point, so none is printed.")
-        print("  Label more files before quoting a precision anywhere.")
+        print(f"\n  Categories showing 'n=N labelled' have fewer than {MIN_LABELS}")
+        print("  labelled files, so no rate is computed for them at all.")
 
 
 def main(argv: list[str] | None = None) -> int:

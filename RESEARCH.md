@@ -36,8 +36,13 @@ measured:
 | Pinned commit | `bb4c9c5a8bcbe281e2fbe3fd1fa961e514c0a93f`, 14 Nov 2026 |
 | Markdown files | 1,710 |
 | Analysed | 1,699 at or above 200 bytes |
-| Size | 38.2 MB |
+| Size | 38.2 MiB, which is 40.1 MB |
 | Vendors | 17 |
+
+One of those 1,699 files is the corpus repository's own `README.md`, which sits
+at the root rather than under a vendor directory. It is not a system prompt,
+and it is the single credential-shaped hit in section 4.1, so it is named here
+rather than left inside a denominator.
 
 Largest: Meta 512 files, Anthropic 466, OpenAI 432, GLM 90, xAI 76, Google 63.
 Median prompt 5,794 characters; largest 987,902.
@@ -77,21 +82,28 @@ every time it is wrong.
 
 ## 4. Results
 
-### 4.1 Credentials: zero
+### 4.1 Credentials: none in a prompt
 
 OWASP's critical tier for LLM08 is credentials in hidden context. Two
 independent tools were run over all 1,699 files.
 
-| Tool | Raw hits | After reading the files | 
-|---|---|---|
-| gitleaks 8.30.1 | 2 | 0 |
-| `hcx` credential rule | 2 | 0 |
+| Tool | Raw hits | Files | After reading the files |
+|---|---|---|---|
+| gitleaks 8.30.1 | 2 | 2 | 0 live credentials |
+| `hcx` credential rule | 3 | 1 | 0 live credentials |
 
 **Across 1,699 published system prompts from 17 vendors, no live credential was
 found.** That is the headline, and it is the good-news story this field rarely
-gets to report.
+gets to report. It is a statement about prompts, not about files: `hcx`'s three
+hits are one real token repeated on three lines of the corpus repository's own
+`README.md`, which is repository metadata.
 
-The four raw hits are worth more than the zero, because of how they failed.
+The two tools do not overlap, which is the more useful observation. gitleaks
+finds the xAI pair described below and misses the `README.md` token. `hcx`
+finds the `README.md` token and downgrades the xAI pair after reading the
+prose around them. Neither alone would have given the right answer.
+
+The raw hits are worth more than the headline, because of how they failed.
 
 **gitleaks' two.** Both in xAI Grok skill files, both genuinely
 API-key-shaped, high-entropy strings in an `Authorization` header and a `key`
@@ -141,12 +153,14 @@ before any detector was run against them.
 
 **Hidden context exposure is close to universal and credential exposure is
 absent.** 48 of 50 published system prompts disclose at least one LLM08:2026
-category. None disclose a credential.
+category. None of the 50 discloses a credential, before or after the
+credential rule was widened.
 
 The 45 files beyond the original five were drawn by
 `python -m hcx.sample --n 45 --seed 20261115`, proportional by vendor with a
 floor of one slot for any vendor holding ten or more files, from files between
-200 bytes and 20 KB. That band covers 83.3% of the corpus; the largest prompts
+200 bytes and 20,000 bytes. The sampler reports a pool of 1,424 files, which
+is 83.8% of the corpus; the largest prompts
 are under-represented, and since a longer prompt has more chance of carrying any
 given category, these rates are if anything conservative.
 
@@ -157,9 +171,21 @@ Over all 1,699 files:
 ```
   C1    874 / 1699   51.4%        C5    415 / 1699   24.4%
   C2    858 / 1699   50.5%        C6    919 / 1699   54.1%
-  C3    351 / 1699   20.7%        CRED    0 / 1699    0.0%
+  C3    351 / 1699   20.7%        CRED    1 / 1699    0.1%
   C4    152 / 1699    8.9%
 ```
+
+The single CRED file is the corpus repository's own `README.md`, carrying a
+`sealed_token` in a chart embed URL on three lines.
+
+This cell read `CRED 0 / 1699 0.0%` in an earlier version of this document,
+and that was wrong in a specific and instructive way. Section 5.6 below
+records the re-scan that took corpus A from 0 to 9 credential findings and
+then down to 3 once the kebab-case slugs were excluded. Section 5.8 recorded
+the result of that, 0.1%. **This cell was never recomputed, so one document
+carried two different answers for the same measurement and nothing noticed.**
+`census --expect-cred` and CI now assert the count, which is the only real fix
+for a number a human has to remember to refresh.
 
 Every figure sits below the hand-labelled prevalence, which is what recall
 below 1.0 predicts. **Quote the n=50 prevalence, not these.** These describe
@@ -176,16 +202,26 @@ between the baseline and the final run.
 ### 5.1 The honest number: holdout
 
 ```
-  cat   tp  fp  fn  tn   precision   recall
-  ------------------------------------------------
-  C1     8   0   4   8       1.000    0.667
-  C2     6   0   9   5       1.000    0.400
-  C3     4   1   1  14       0.800    0.800
-  C4     2   1   2  15       0.667    0.500
-  C5     2   0   6  12       1.000    0.250
-  C6     9   2   2   7       0.818    0.818
-  CRED   0   0   0  20         n/a      n/a
+  cat   tp  fp  fn  tn   precision   n   95% CI         recall   n
+  --------------------------------------------------------------------
+  C1     8   0   4   8       1.000   8   [0.68, 1.00]    0.667  12
+  C2     6   0   9   5       1.000   6   [0.61, 1.00]    0.400  15
+  C3     4   1   1  14       0.800   5   [0.38, 0.96]    0.800   5
+  C4     2   1   2  15       0.667   3   [0.21, 0.94]    0.500   4
+  C5     2   0   6  12       1.000   2   [0.34, 1.00]    0.250   8
+  C6     9   2   2   7       0.818  11   [0.52, 0.95]    0.818  11
+  CRED   0   0   0  20         n/a   0                     n/a   0
+  --------------------------------------------------------------------
+  pooled 31  4  24           0.886  35   [0.74, 0.95]    0.564  55
 ```
+
+`n` is the denominator of the rate beside it, which is `tp+fp` for precision
+and `tp+fn` for recall. It is printed because a precision over 3 predictions
+and one over 35 format identically and are not the same claim, and because
+the minimum-sample guard in `hcx.measure` originally tested the number of
+labelled files (20) instead of these denominators. **C4's 0.667 is two
+correct calls out of three.** The pooled row is the only one here with a
+denominator large enough to carry a usable interval.
 
 ### 5.2 The same detectors, scored on the split they were tuned against
 
@@ -204,6 +240,16 @@ between the baseline and the final run.
 **Precision is 1.000 on every category on the split the detectors were fitted
 to, and falls as far as 0.667 on the split they were not.** Recall moves in
 both directions, and C5 collapses from 0.727 to 0.250.
+
+Three of the six do not move at all, which the table above shows and an
+earlier version of the README did not: it printed C3, C4 and C6 only.
+
+The dev column also deserves less weight than its 1.000 suggests. The
+detectors were improved until no false positive remained on dev, so that
+column is a construction rather than a measurement, and part of the gap is
+definitional. The claim the data supports is narrower and better stated
+without a ratio: **four false positives in thirty-five predictions on files
+the detectors had never seen.**
 
 Nothing was done to produce that gap. It is what happens when a detector is
 improved against labelled data and then measured somewhere else, and it is the
@@ -267,22 +313,49 @@ restoring it and confirming it goes green.
 ## 5.6 Head to head with another tool
 
 [promptsonar](https://github.com/meghal86/promptsonar) is the nearest thing to
-prior art: MIT, TypeScript, 309 source files, an AISec 2026 evaluation harness,
-22 ground-truthed fixtures, 37 wild repos, and baselines against NVIDIA
-SkillSpector. It was missed by the GitHub searches recorded in section 7
-because it brands around prompts and MCP configs rather than the OWASP
-category name. That was a search failure here, not a gap in the field.
+prior art: MIT, TypeScript, version 1.6.0 at commit `ac17e984`, with an AISec
+2026 evaluation harness and baselines against NVIDIA SkillSpector. It was
+missed by the GitHub searches recorded in section 7 because it brands around
+prompts and MCP configs rather than the OWASP category name. That was a search
+failure here, not a gap in the field.
+
+Each figure below was re-derived from that pinned clone, with the definition
+stated, because the first version of this section gave counts with no
+definition attached and one of them was wrong:
+
+| | | |
+|---|---|---|
+| 309 | source files | git-tracked `*.ts`, excluding the 32 `*.tsx` |
+| 22 | ground-truthed fixtures | `cases` in `eval/controlled-manifest.json`, and 22 directories in `eval/corpus/controlled` |
+| 37 | wild repos | `repos` in `eval/results/wild-results.json` |
 
 It was built from source and run over the same 50 hand-labelled files.
 
 ```
-  ground truth (human)   48/50 files disclose at least one LLM08:2026 category
-  promptsonar             3/50 files flagged, 11 findings total
+  ground truth (human)        48/50 files disclose an LLM08:2026 category
 
-  rules that fired:  sec_privileged_sink_access  9
-                     sec_owasp_llm02_pii         1
-                     sec_mcp_tool_poisoning      1
+  promptsonar, all 7 pillars  18/50 files, 87 findings
+  promptsonar, security only   3/50 files, 11 findings
+
+  security rules that fired:  sec_privileged_sink_access  9
+                              sec_owasp_llm02_pii         1
+                              sec_mcp_tool_poisoning      1
+
+    xAI/.../site-playbooks-resy.md            llm02_pii
+    Meta/.../device-data/SKILL.md             mcp_tool_poisoning, sink_access
+    Anthropic/.../claude-api/curl/examples.md sink_access x8
 ```
+
+**Both rows, because an earlier version of this section printed only the
+second one and labelled it "promptsonar 3/50 files flagged".** That is the
+security pillar alone. The tool flags 18 of the 50 files across its seven
+pillars, six times as many, and 87 findings rather than 11. Quoting the
+security subset as though it were the whole tool understates it by a factor of
+six in a section whose entire argument is that it should not be understated.
+
+The security subset is still the right row for *this* comparison, because
+disclosure is a security question and the other six pillars score prompt
+quality. It just has to be labelled as a subset.
 
 **This is not a defeat for promptsonar and it should not be read as one.** It
 scores prompt quality and execution risk across seven pillars: injection
@@ -294,17 +367,29 @@ The symmetry proves it. Running `hcx` over promptsonar's own 22 controlled
 fixtures:
 
 ```
-  fires C6 on 10 fixtures, C4 on 1, nothing on the other 11
+  fires on 10 of 22 fixtures, nothing on the other 12
+    C6 on 10 fixtures
+    C4 on 1, which is also one of those 10 (case-015-mcp-wildcard)
+
   misses case-007 zero-width-injection, case-016 prompt-injection-llm01,
          case-017 base64-injection, case-008 memory-sensitive
+  correctly silent on the three negative controls:
+         case-009, case-010, case-020
 ```
+
+An earlier version of this block said "nothing on the other 11", which made
+the three numbers add to 22 and looked right for that reason. The C4 fixture
+is also a C6 fixture, so the fired set is 10 and the silent set is 12.
 
 Neither tool can do the other's job. **The LLM08:2026 disclosure lane is
 genuinely unoccupied, and that is now measured rather than asserted.**
 
 ### What their fixtures found in our detector
 
-Two real bugs, both in the credential rule, both now regression-tested.
+Three real bugs, all in the credential rule. The third was found by re-running
+their fixtures months later, and it is the worst of the three: this section
+previously claimed the first bug was fixed, while the fixture it is named after
+still returned nothing.
 
 **`case-021-hardcoded-secret` was missed outright.** The fixture is
 `OPENAI_API_KEY="..."`. The rule began `(?:api[_-]?key|...)`, and an
@@ -317,25 +402,106 @@ allows any number of underscore-separated prefix segments.
 9 high-severity findings. Six were `console_key: contract-tracker-obligations`
 in YAML front matter: kebab-case document slugs, not credentials. The
 identifier check covered `snake_case` and `SCREAMING_SNAKE` but not
-`kebab-case`. Fixed by treating any single-case separator-joined value as a
-name, while leaving unbroken hex and mixed-case values as credentials.
+`kebab-case`. It was fixed at the time by treating any single-case
+separator-joined value as a name, while leaving unbroken hex and mixed-case
+values as credentials. **That fix was too broad and is the third bug below:
+it also discards `sk-live-...`.** The rule now keys on segment length
+instead.
 
 That sequence is worth stating plainly: fixing a false negative created six
 false positives, and only re-running the full corpus caught it. A detector
 change is not done when the new case passes.
 
-### The credential headline, corrected
+**The third bug: the first fix was tested with a value the fixture does not
+contain.** The regression test asserted on
+`OPENAI_API_KEY="8we2hKl3mNp0QrStUvWxYz12AbCd34Ef"`, a mixed-case value
+invented for the test. The fixture's real value is
+`sk-live-abcdefghijklmnop1234567890`, which is lowercase and hyphen-joined, so
+`_looks_like_identifier` discarded it as a name. **The keyword fix was real,
+the test passed, and the fixture still produced zero findings**, and it stayed
+that way through every later change while this document said otherwise.
 
-The earlier claim was "zero credentials across 1,699 files". After a
-considerably more aggressive detector, the precise claim is:
+The gap had even been written up as a rare declared limit for `glpat-` style
+tokens. It is not rare. It covers `sk-`, `glpat-` and every other lowercase
+prefixed key, which is most of the formats that matter, and calling it rare
+made a bad call look considered.
 
-> Zero credentials in any system prompt. One token exists corpus-wide: a
-> `sealed_token` in a star-history.com chart embed URL, in the corpus
-> repository's own `README.md`, which is repository metadata rather than
-> hidden context.
+The fix separates a name from a token by segment length rather than by case. A
+name is made of words and words are short: the longest segment in any real
+name found across the four corpora is 11 characters
+(`contract-tracker-obligations`), while the two missed tokens run 20 and 26.
+Any separator-joined value with a segment of 16 or more characters is now a
+token, and 16 is also the shortest value the rule accepts at all. The
+fixture's own text is the regression test now, verbatim. The census was re-run
+over all four corpora afterwards and the credential counts did not move.
 
-That is a stronger result than the original, because it survived a detector
-that now catches a form the first one could not see at all.
+The lesson is narrower than "test more": **when someone else's fixture finds
+your bug, the regression test is their fixture, not a value of your own that
+resembles it.**
+
+### The credential headline, corrected twice
+
+The first claim was "zero credentials across 1,699 files". It was then
+restated as "zero credentials across 3,649 prompts, four corpora". The
+restatement was false, and the way it became false is the useful part.
+
+**The measurement was done.** The census was run over all four corpora, and
+section 5.8 recorded the result correctly as `CRED is 0.1%, 0.1%, 0.0% and
+0.0%`. Nothing was skipped. What failed was everything downstream of the
+number:
+
+1. **Section 5.8 contradicted itself inside four lines**, putting a bold
+   "Zero credentials" directly above the 0.1% figures that refute it.
+2. **Section 4.3 still said `CRED 0 / 1699`**, never refreshed after the
+   re-scan in 5.6 left corpus A at three findings. Two sections of one
+   document, two answers.
+3. **The README summarised the bold line and dropped the figures**, so the
+   front page of the repository said "None disclose a credential, across four
+   corpora" while its own appendix said 0.1% twice.
+4. **The hand verdicts were never actually done.** The gloss "every hit
+   resolves to a published public token or an identifier on inspection" was
+   carried over from the earlier xAI Resy and Target finding. It does not
+   describe any of the hits it was attached to: a real `sealed_token`, a
+   fabricated `Basic` auth example, and three Windows service names.
+
+So the error was not a missing measurement. It was a rounded percentage that
+nobody read, a stale cell nobody refreshed, and a verdict nobody checked. A
+0.1% that covers both one file and two files out of 1,691 is a number
+engineered to hide a change, and it did: widening the rule to catch
+`Authorization: Bearer <token>` took B1 from one file to two, and the printed
+percentage did not move.
+
+With that rule fixed and the census re-run, the full result is nine
+shape-matches, six distinct values, three files:
+
+| Corpus | File | Hits | Hand verdict |
+|---|---|---|---|
+| A | the corpus repo's own `README.md` | 3 | One real `sealed_token` in a star-history.com chart embed URL, repeated on three lines. Repository metadata, not hidden context. |
+| B1 | `.../knowledge/P0tS3c/testing for command injection (RCE).md` | 2 | One fabricated `Authorization: Basic` example, on two lines, in a penetration-testing cheat sheet. Found only after the rule was widened. |
+| B1 | `.../knowledge/P0tS3c/UsingMetasploit.md` | 4 | Pasted lab console output: one LSA hash, and three Windows secret *names* (`aspnet_WP_PASSWORD`, `_SC_aspnet_state`, `_SC_LicenseService`) rather than values. |
+| B2, C | nothing | 0 | |
+
+**Seven of those nine were already visible to the version that was
+published.** Two needed the new rule. The detector was never the weak link;
+the reporting was.
+
+The precise claim is now:
+
+> No system prompt in any of the four corpora contains a live credential.
+> Three files out of 3,649 carry a credential-shaped string. One is
+> repository metadata and two are third-party penetration-testing cheat
+> sheets attached to a custom GPT as knowledge documents.
+
+`python -m hcx.scan census <corpus> --expect-cred N` now asserts the count,
+and CI runs it on all four corpora on every push. The gate exists because
+both errors above were the same error: a number that nothing re-measured.
+
+The three `Secret : <name>` hits are genuine false positives, and they are
+kept rather than patched out. The general fix would be to treat a mixed-case
+underscore-joined value as a name, which is also the shape of real tokens, and
+writing a pattern to quiet one Metasploit tutorial is fitting a regex to a
+sample of three. The tool reports them as shape matches with a note telling
+the reader to confirm, which is what it is for. Recorded here, not hidden.
 
 ### Three tools, one file
 
@@ -363,17 +529,33 @@ because it stores each generation as its own file. `python -m hcx.drift` finds
 
 ### System prompts are growing
 
+All thirteen, because an earlier version of this table showed the five
+fastest growers under this heading and hid the rest behind an ellipsis. The
+largest series grew 1.4x and two shrank.
+
 ```
-  series                        n    first     last   growth   rho
-  ------------------------------------------------------------------
-  xAI/grok                      6     4,259   45,164   10.6x  +0.94
-  Anthropic/claude-opus         6    90,351  477,020    5.3x  +0.43
-  OpenAI/gpt-sol                3   126,855  637,242    5.0x  +0.50
-  Anthropic/claude-sonnet       4   101,438  479,742    4.7x  +1.00
-  Google/gemini-flash           4    15,511   57,657    3.7x  +1.00
-  ...
+  series                             n     first      last   growth    rho
+  --------------------------------------------------------------------------
+  xAI/grok                           6     4,259    45,164    10.6x  +0.94
+  Anthropic/claude-opus              6    90,351   477,020     5.3x  +0.43
+  OpenAI/gpt/-sol                    3   126,855   637,242     5.0x  +0.50
+  Anthropic/claude-sonnet            4   101,438   479,742     4.7x  +1.00
+  Google/gemini/-flash               4    15,511    57,657     3.7x  +1.00
+  OpenAI/gpt/-codex                  4     6,948    10,507     1.5x  +1.00
+  OpenAI/gpt/-thinking               4    78,961   115,924     1.5x  +0.80
+  OpenAI/gpt                         8    12,915    17,753     1.4x  +0.38
+  Anthropic/2026-10-30-claude-opus   3    20,273    26,064     1.3x  +1.00
+  Anthropic/claude-fable             3   404,644   452,763     1.1x  +0.50
+  Anthropic/claude-code-fable        3   431,746   432,230     1.0x  +0.50
+  Anthropic/claude-code-sonnet       3   463,846   427,383     0.9x  -0.50
+  Anthropic/claude-code-opus         5   471,057   427,817     0.9x  -0.70
+
   growing 11, shrinking 2, sign test p = 0.0225
 ```
+
+The growth is real but uneven. It is driven by the vendor-facing model prompts;
+the `claude-code-*` series are already near half a megabyte and are flat or
+slightly down.
 
 ### Safety language is not growing with them
 
@@ -402,20 +584,36 @@ counts say why, and they are more convincing than the density arithmetic:
 ```
 
 **The absolute volume of refusal and safety language is close to constant while
-the prompt grows several-fold.** Anthropic's opus line sits at nine or ten
-matches across six generations while the prompt grows 5.3x. OpenAI's main gpt
-line sits at exactly three across six consecutive versions.
+the prompt grows several-fold.** Five of Anthropic's six opus generations sit
+at nine or ten matches while the prompt grows 5.3x. OpenAI's main gpt line
+sits at exactly three across seven consecutive versions, 4.1 through 5.5,
+including the one where the prompt jumps to 359,517 characters.
 
-That is a stronger statement than "density falls", because it does not depend
-on the division. Safety language is not being removed. It is simply not scaling
-with everything else that is being added.
+One generation breaks the pattern and is stated rather than smoothed:
+**claude-opus 4.6 has 23 matches**, more than double its neighbours. It is
+also by far the largest file in the series at 813,377 characters, so its
+density is the lowest of the six at 0.3 per 10k. Whether 4.6 is a genuine
+outlier or an artifact of a differently assembled file is not something this
+corpus can answer.
 
-The majority direction is downward at **all four vendors independently**:
+Even with 4.6 included the point holds, because it is a point about scaling:
+the counts move between 9 and 23 while the character count moves between
+90,351 and 813,377. That is a stronger statement than "density falls",
+because it does not depend on the division. Safety language is not being
+removed. It is not scaling with everything else being added.
+
+The direction is downward at each of the four vendors:
 
 ```
   C3 density rising / with a direction
     Anthropic   1/7      Google   0/1      OpenAI   1/4      xAI   0/1
 ```
+
+Read that with the denominators in view. Anthropic at 1/7 and OpenAI at 1/4
+are the only two cells with enough series to mean anything; Google and xAI
+contribute one series each, so "0/1" is one file pair, not a vendor trend.
+Calling this four independent vendors agreeing, as an earlier version of this
+section did, credits two single observations as if they were evidence.
 
 ### Why this is exploratory and not a finding
 
@@ -489,19 +687,35 @@ prompts most people actually write.
 
 ### It is not a length artifact
 
-The obvious objection is that custom GPT instructions are shorter, so every rate
-falls mechanically. Length explains a factor of two. The gap is a factor of 78.
+The obvious objection is that custom GPT instructions are shorter, so every
+rate falls mechanically. Length explains a factor of two.
 
 ```
-  corpus                  median chars    C1 matches per 10k chars
-  A   frontier vendors           5,794                      15.57
-  B1  custom GPT authors         2,649                       0.20
-  B2  vendor, 2nd curator        5,277                       1.91
-  C   coding agents             12,569                       1.44
+  corpus                  median chars    mean per-file    pooled
+                                          C1 / 10k chars   C1 / 10k chars
+  ------------------------------------------------------------------------
+  A   frontier vendors           5,794             15.57             2.70
+  B1  custom GPT authors         2,643              0.20             0.44
+  B2  vendor, 2nd curator        5,277              1.91             1.60
+  C   coding agents             12,443              1.44             1.25
+
+  median length A / B1          2.19x
+  density gap A / B1                             77.9x             6.1x
 ```
+
+**Two density columns, because the choice of definition changes the headline
+by an order of magnitude and an earlier version of this section printed only
+the flattering one.** The mean of per-file rates gives 77.9x. The pooled rate,
+total matches divided by total characters, gives 6.1x. The mean is inflated by
+short files: one C1 match in a 300-character file scores 33 per 10k, and B1 is
+full of short files that score zero, so the two averages diverge.
+
+The honest reading is the pooled one: **a 6.1x density gap against a 2.2x
+length gap.** That is still well clear of the length confound, which is what
+this section exists to establish, and it does not need the larger number.
 
 Custom GPT authors do not describe tool schemas because they do not have tools
-to describe. The difference is real.
+to describe. The difference is real at either definition.
 
 ### One category runs the other way
 
@@ -513,33 +727,48 @@ direction.
 
 ### A composition bias in our own corpus, found by this comparison
 
-A's C1 density is eight times B2's, although both are vendor prompts of similar
-median length. Splitting A by what the files actually are explains it:
+A's C1 density is higher than B2's although both are vendor prompts of similar
+median length. Splitting A by what the files actually are explains it. A file
+counts as a skill or agent file when its path contains `skill` or `agent`,
+case-insensitively, which is crude but stated, so the split can be re-derived:
 
 ```
   group                     n    share   median chars      C1      C6      C3
   --------------------------------------------------------------------------
-  skill / agent files    1214    71.5%          4,604   53.7%   52.8%    8.8%
-  plain model prompts     485    28.5%         12,225   45.8%   57.3%   50.3%
+  skill / agent files    1222    71.9%          4,588   53.0%   52.2%    9.7%
+  plain model prompts     477    28.1%         12,286   47.4%   58.9%   48.8%
 ```
 
-**71.5% of the primary corpus is agent skill files, not model system prompts**,
-and the two differ by 5.7x on C3. A skill file is a task instruction and carries
-almost no refusal language; a model prompt carries a great deal.
+**71.9% of the primary corpus is agent skill files, not model system prompts**,
+and the two differ by 5.0x on C3. A skill file is a task instruction and
+carries almost no refusal language; a model prompt carries a great deal.
 
 So the blended "C3 = 20.7%" in section 4.3 describes neither group. The honest
-split is 8.8% for skill files and 50.3% for model prompts. Every A-corpus figure
-in this document should be read with that composition in mind, and future work
-should report the two separately rather than pooling them.
+split is 9.7% for skill files and 48.8% for model prompts. Every A-corpus
+figure in this document should be read with that composition in mind, and
+future work should report the two separately rather than pooling them.
+
+An earlier version of this table gave 1214/485, medians 4,604 and 12,225, and
+a 5.7x C3 gap. Those numbers could not be reproduced from any path rule tried,
+so they were replaced with figures computed from the stated classifier. The
+conclusion is unchanged and the arithmetic now re-derives.
 
 ### What survived
 
-One result transfers cleanly, and it is the headline.
+One result transfers, and it is the headline. It is not a zero.
 
-**Zero credentials, now across 3,649 prompts from four independently assembled
-corpora under four different licences.** CRED is 0.1%, 0.1%, 0.0% and 0.0%, and
-every hit resolves to a published public token or an identifier on inspection.
-That is no longer a fact about one collection.
+**No system prompt in any of the four corpora contains a live credential.**
+Three files out of 3,649 carry a credential-shaped string: 1 in A, 2 in B1, 0
+in B2, 0 in C. One is the corpus repository's own README and two are
+third-party penetration-testing cheat sheets attached to a custom GPT as
+knowledge documents. Each was read by hand and the verdicts are in "The
+credential headline, corrected twice" above.
+
+The percentage form of this, `0.1%, 0.1%, 0.0%, 0.0%`, is how an earlier
+version of this section stated it, and it is a bad way to state it. At three
+files out of 3,649 the rate rounds away the only thing worth knowing, and a
+0.1% that covers both one file and two hid a real change when the detector
+improved. File counts from here on, and CI asserts each one.
 
 ---
 
@@ -593,21 +822,33 @@ guarantee rather than a policy: a tool that cannot reach a live endpoint cannot
 be pointed at somebody else's product, by its author or by anyone who clones
 it.
 
-Token values are never printed. The two public tokens found are described by
-length and context only, and `hcx` reports credential findings with the value
-left in the source line rather than extracted, so piping output to a log does
-not create a new copy of something that might be a secret.
+Token values are never printed. Every credential-shaped string found across
+the four corpora is described here by length, shape and context only, with one
+exception: the fabricated `Authorization: Basic` example from a published
+penetration-testing cheat sheet is quoted, because it is a made-up string in a
+public tutorial and quoting it is what makes the hand verdict checkable.
+`hcx` reports credential findings with the value left in the source line
+rather than extracted, so piping output to a log does not create a new copy of
+something that might be a secret.
 
 ---
 
 ## 8. What would change these conclusions
 
-- **A credential found at n > 1,699.** The zero is specific to this corpus and
-  this pin. Re-run after bumping the pin.
+- **A live credential found inside an actual prompt.** The result is specific
+  to these four corpora and these pins. Re-run after bumping any pin;
+  `census --expect-cred` will fail the build rather than let the claim drift.
 - **Precision below roughly 0.6 at n=50.** Then the census is measuring the
   detectors rather than the corpus, and the honest publication is the method
-  and the failure, not the rates.
+  and the failure, not the rates. Pooled holdout precision is currently 0.886
+  over 35 predictions, with a 95% interval of [0.74, 0.95], so the lower bound
+  is already within 0.14 of that line.
 - **C6 not holding up under labelling.** The proposal that capability
-  disclosure deserves its own category rests on a 46.0% hit rate whose
-  precision is unmeasured. If hand-labelling halves it, it is an observation,
-  not a proposal.
+  disclosure deserves its own category rests on a 54.1% detector hit rate over
+  corpus A and a 58% hand-labelled prevalence at n=50, against a holdout
+  precision of 0.818 over 11 predictions. If a larger labelled sample halves
+  it, it is an observation, not a proposal.
+- **The composition split in 5.8 holding up under a better classifier.**
+  71.9% skill files rests on a path-substring test. A real classifier could
+  move it several points and would change every A-corpus figure's
+  interpretation, though not its value.
