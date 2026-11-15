@@ -154,6 +154,22 @@ jobs:
       - run: ./corpus/fetch.sh
       - run: ./corpus/fetch-comparison.sh
 
+      # The README figure is generated from these same four corpora. It is
+      # regenerated here and diffed, because a chart maintained by hand is the
+      # same defect as a table maintained by hand, and this repository has
+      # already shipped that defect in a table twice.
+      - name: The README figure must match the data
+        run: |
+          set -euo pipefail
+          python docs/make_figure.py
+          if ! git diff --quiet -- docs/; then
+            echo "The committed figure no longer matches the corpora."
+            git diff --stat -- docs/
+            echo "Run: python docs/make_figure.py, then commit the result."
+            exit 1
+          fi
+          echo "figure reproduces from the corpora"
+
       # A: frontier vendor prompts. The one hit is the corpus repo's own
       #    README.md, a sealed_token in a star-history chart URL.
       - run: python -m hcx.scan census .corpus/spl --expect-cred 1

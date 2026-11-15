@@ -381,8 +381,43 @@ An earlier version of this block said "nothing on the other 11", which made
 the three numbers add to 22 and looked right for that reason. The C4 fixture
 is also a C6 fixture, so the fired set is 10 and the silent set is 12.
 
-Neither tool can do the other's job. **The LLM08:2026 disclosure lane is
-genuinely unoccupied, and that is now measured rather than asserted.**
+Neither tool can do the other's job.
+
+### A second search miss, and a narrower claim
+
+An earlier version of this section ended: "**The LLM08:2026 disclosure lane is
+genuinely unoccupied, and that is now measured rather than asserted.**" That is
+too strong, and the searches in section 7 missed a second thing.
+
+[Project Aegis](https://github.com/ModernNomad-98/Project-Aegis), Apache-2.0,
+ships a **Hidden Context Exposure Reviewer** skill, added 28 September 2026,
+which is before most of the work in this repository. It targets LLM08:2026 by
+name, uses the same "formerly LLM07 System Prompt Leakage" framing, rates
+findings on OWASP's informational-to-critical scale for this category, and
+states as its core principle that **hidden context is not a security control**
+and should be treated as publicly extractable.
+
+That is the same thesis this repository argues from measurement, reached
+independently, and published first. It deserves saying plainly rather than
+being left out because it is inconvenient.
+
+It is not the same artifact. It is one review checklist among 256 skills in
+that library: guidance for a human or an agent reviewing a feature, with no
+scanner, no corpus, and no accuracy measurement. The repository explicitly
+disclaims live-model evaluation and measured calibration.
+
+So the honest claim is narrower:
+
+> Other people are writing LLM08:2026 **guidance**. Nobody found so far is
+> **measuring** it: running a detector over a pinned corpus, hand-labelling a
+> sample, sealing a holdout, and publishing the precision with its
+> denominator. That is the gap this repository occupies.
+
+The pattern in both misses is worth recording. The section 7 searches looked
+for tool-shaped things, with tool-shaped words. promptsonar was missed because
+it brands around prompts and MCP configs; this was missed because it is a
+skill in a skills library rather than a repository named after the category.
+**A literature search that only looks for competitors finds only competitors.**
 
 ### What their fixtures found in our detector
 

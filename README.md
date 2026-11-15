@@ -6,6 +6,15 @@ A scanner for [OWASP LLM08:2026 Hidden Context
 Exposure](https://genai.owasp.org/), and a census of what 1,699 published
 system prompts actually contain.
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/corpus-spread-dark.svg">
+  <img alt="Grouped bar chart. Six hidden context categories, C1 to C6, measured on four independently assembled corpora. C1 tool and function schemas runs from 4.6% on custom GPT instructions to 61.7% on coding agents, with frontier vendor prompts at 51.4% and a second vendor corpus at 43.6%. Every category except C3 is lower on custom GPT instructions than on frontier vendor prompts. C3 refusal and safety runs the other way and is highest there, at 33.4% against 20.7%." src="docs/corpus-spread-light.svg">
+</picture>
+
+Every number in that figure is computed from the pinned corpora by
+`docs/make_figure.py`, and CI regenerates it and fails if it drifts from the
+data. The full table is below.
+
 OWASP re-scoped this entry on 4 August 2026. System Prompt Leakage became
 Hidden Context Exposure, and the question changed from *did the prompt leak*
 to *what does the leak reveal*. A CCS 2026 study put extraction at over 80% of
