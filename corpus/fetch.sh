@@ -36,5 +36,19 @@ git -C "$DEST" checkout -q FETCH_HEAD
 n="$(find "$DEST" -name '*.md' -not -path '*/.git/*' | wc -l)"
 echo "fetched $n markdown files to $DEST at $PIN"
 
+# Check the count, do not just print it. A pinned commit should produce the
+# same tree everywhere, and when it does not, every rate computed from it is
+# quietly wrong. That is not hypothetical here: one markdown symlink in this
+# corpus made the census 1,699 files on Windows and 1,700 on Linux, and it
+# took a CI run on a different operating system to notice. See RESEARCH.md,
+# "Every published rate was a Windows number".
+EXPECTED_MD=1710
+if [ "$n" -ne "$EXPECTED_MD" ]; then
+  echo "WARNING: expected $EXPECTED_MD markdown files at this pin, found $n." >&2
+  echo "The checkout differs from the one every published number was" >&2
+  echo "computed on. Do not trust a census from this tree until you know why." >&2
+  exit 1
+fi
+
 # The corpus is third-party text. It is read and parsed, never executed, and
 # nothing here imports from it.

@@ -507,7 +507,7 @@ number:
 
 So the error was not a missing measurement. It was a rounded percentage that
 nobody read, a stale cell nobody refreshed, and a verdict nobody checked. A
-0.1% that covers both one file and two files out of 1,691 is a number
+0.1% that covers both one file and two files out of 1,693 is a number
 engineered to hide a change, and it did: widening the rule to catch
 `Authorization: Bearer <token>` took B1 from one file to two, and the printed
 percentage did not move.
@@ -529,7 +529,7 @@ the reporting was.
 The precise claim is now:
 
 > No system prompt in any of the four corpora contains a live credential.
-> Three files out of 3,649 carry a credential-shaped string. One is
+> Three files out of 3,651 carry a credential-shaped string. One is
 > repository metadata and two are third-party penetration-testing cheat
 > sheets attached to a custom GPT as knowledge documents.
 
@@ -698,7 +698,7 @@ to find out whether any of it generalises.
 ```
 
 **Zero exact-content overlap** between A and any of them, by normalised SHA-256
-over 3,649 files. These are independently assembled, not forks of each other.
+over 3,651 files. These are independently assembled, not forks of each other.
 B2 is the control: the same population as A, collected by someone else.
 
 ### The rates do not transfer
@@ -707,13 +707,13 @@ B2 is the control: the same population as A, collected by someone else.
   corpus                     n       C1      C2      C3      C4      C5      C6
   ---------------------------------------------------------------------------
   A   frontier vendors    1699    51.4%   50.5%   20.7%    8.9%   24.4%   54.1%
-  B1  custom GPT authors  1691     4.6%   13.5%   33.4%    0.5%    5.4%    7.8%
+  B1  custom GPT authors  1693     4.7%   13.5%   33.4%    0.7%    5.5%    8.0%
   B2  vendor, 2nd curator  165    43.6%   58.2%   40.0%    4.2%   17.0%   35.2%
   C   coding agents         94    61.7%   76.6%   61.7%    5.3%   45.7%   76.6%
 ```
 
-C1 runs from **4.6% to 61.7%** depending on who wrote the prompt, at almost
-identical n for A and B1. C6 runs from 7.8% to 76.6%.
+C1 runs from **4.7% to 61.7%** depending on who wrote the prompt, at almost
+identical n for A and B1. C6 runs from 8.0% to 76.6%.
 
 B2 behaves as a control should: same population type, independently collected,
 rates in the same region as A without matching them. So the swing at B1 and C is
@@ -736,7 +736,7 @@ rate falls mechanically. Length explains a factor of two.
                                           C1 / 10k chars   C1 / 10k chars
   ------------------------------------------------------------------------
   A   frontier vendors           5,794             15.57             2.70
-  B1  custom GPT authors         2,643              0.20             0.44
+  B1  custom GPT authors         2,649              0.20             0.44
   B2  vendor, 2nd curator        5,277              1.91             1.60
   C   coding agents             12,443              1.44             1.25
 
@@ -799,7 +799,7 @@ conclusion is unchanged and the arithmetic now re-derives.
 One result transfers, and it is the headline. It is not a zero.
 
 **No system prompt in any of the four corpora contains a live credential.**
-Three files out of 3,649 carry a credential-shaped string: 1 in A, 2 in B1, 0
+Three files out of 3,651 carry a credential-shaped string: 1 in A, 2 in B1, 0
 in B2, 0 in C. One is the corpus repository's own README and two are
 third-party penetration-testing cheat sheets attached to a custom GPT as
 knowledge documents. Each was read by hand and the verdicts are in "The
@@ -807,7 +807,7 @@ credential headline, corrected twice" above.
 
 The percentage form of this, `0.1%, 0.1%, 0.0%, 0.0%`, is how an earlier
 version of this section stated it, and it is a bad way to state it. At three
-files out of 3,649 the rate rounds away the only thing worth knowing, and a
+files out of 3,651 the rate rounds away the only thing worth knowing, and a
 0.1% that covers both one file and two hid a real change when the detector
 improved. File counts from here on, and CI asserts each one.
 
@@ -867,6 +867,54 @@ used by the census, the drift analysis, the sampler and the figure. The
 regression test creates a symlink and asserts it is not counted; it skips on
 Windows, where creating one needs a privilege this account does not have, and
 runs on Linux, which is the platform that exhibited the bug.
+
+### And then the antivirus ate the corpus
+
+Fixing the symlink made corpus A agree across platforms. CI promptly failed
+again on B1, and the second cause was worse than the first.
+
+Windows Defender quarantines three Hack The Box cheat sheets in the B1 corpus,
+`All_cheatsheets.md`, `FileInclusion.md` and `ShellsAndPayloads.md`. It deletes
+them, a `git checkout` restores them, and it deletes them again, sometimes
+**during a measurement run**. Three consecutive censuses on this machine
+reported n = 1694, 1692 and 1693, because a different subset existed each
+time. Every B1 figure this repository published was computed on a corpus that
+the host operating system was actively editing.
+
+There is a second, quieter platform difference underneath it. Git for Windows
+checks out with `core.autocrlf=true`, so every file gains a byte per line, and
+a file of 199 bytes at the pinned commit becomes 200 or more on disk and
+crosses the stub threshold. The threshold is defined in bytes, and on Windows
+the bytes are not the bytes in the commit.
+
+The corrected B1 figures, and what they were:
+
+```
+                published   corrected
+  files            1,691       1,693
+  C1                4.6%        4.7%
+  C4                0.5%        0.7%
+  C5                5.4%        5.5%
+  C6                7.8%        8.0%
+  median chars      2,643       2,649
+```
+
+C2, C3 and the credential result do not move: still 2 files and 6 findings in
+B1, none of them in the three quarantined files.
+
+These numbers were measured from the pinned git objects with
+`git cat-file --batch`, not from the working tree, because the working tree on
+this machine cannot be held still long enough to measure. That matches what a
+clean checkout contains byte for byte: no antivirus, no CRLF translation, no
+symlink resolution. The repository's own walkers still read the filesystem,
+which is correct for a tool people point at their own files, and they now say
+loudly when a file will not open.
+
+**The general lesson is the one this project keeps relearning in new costumes.**
+A number is a measurement of a system, and the system includes the filesystem,
+the checkout flags and the antivirus. "Reproducible" means reproducible
+somewhere other than the machine that produced it, and the only reason any of
+this surfaced is that CI runs on an operating system the author does not use.
 
 ### One self-inflicted failure worth recording
 

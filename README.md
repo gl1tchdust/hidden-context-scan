@@ -8,7 +8,7 @@ system prompts actually contain.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/corpus-spread-dark.svg">
-  <img alt="Grouped bar chart. Six hidden context categories, C1 to C6, measured on four independently assembled corpora. C1 tool and function schemas runs from 4.6% on custom GPT instructions to 61.7% on coding agents, with frontier vendor prompts at 51.4% and a second vendor corpus at 43.6%. Every category except C3 is lower on custom GPT instructions than on frontier vendor prompts. C3 refusal and safety runs the other way and is highest there, at 33.4% against 20.7%." src="docs/corpus-spread-light.svg">
+  <img alt="Grouped bar chart. Six hidden context categories, C1 to C6, measured on four independently assembled corpora. C1 tool and function schemas runs from 4.7% on custom GPT instructions to 61.7% on coding agents, with frontier vendor prompts at 51.4% and a second vendor corpus at 43.6%. Every category except C3 is lower on custom GPT instructions than on frontier vendor prompts. C3 refusal and safety runs the other way and is highest there, at 33.4% against 20.7%." src="docs/corpus-spread-light.svg">
 </picture>
 
 Every number in that figure is computed from the pinned corpora by
@@ -75,7 +75,7 @@ nine shape-matches in three files, six distinct values, every one read by hand:
 Seven of those nine were visible to the detector as published. Two needed the
 `Authorization: Bearer` fix, and that fix took B1 from one file to two without
 moving the printed `0.1%` at all, which is the clearest argument against
-reporting three files out of 3,649 as a percentage.
+reporting three files out of 3,651 as a percentage.
 
 Both B1 files are third-party cheat sheets attached to a custom GPT as
 knowledge, not prompts. So the finding holds, and the honest version of it is
@@ -127,12 +127,12 @@ Zero exact-content overlap with the first, so they are independently assembled.
   corpus                     n       C1      C2      C3      C6     CRED
   -----------------------------------------------------------------------
   A   frontier vendors    1699    51.4%   50.5%   20.7%   54.1%    1 file
-  B1  custom GPT authors  1691     4.6%   13.5%   33.4%    7.8%    2 files
+  B1  custom GPT authors  1693     4.7%   13.5%   33.4%    8.0%    2 files
   B2  vendor, 2nd curator  165    43.6%   58.2%   40.0%   35.2%    0
   C   coding agents         94    61.7%   76.6%   61.7%   76.6%    0
 ```
 
-C1 runs from **4.6% to 61.7%** depending on who wrote the prompt. Length
+C1 runs from **4.7% to 61.7%** depending on who wrote the prompt. Length
 explains a factor of 2.2; the pooled C1 density gap is 6.1x. RESEARCH.md
 section 5.8 gives both density definitions, because the mean of per-file rates
 makes that gap look like 78x and an earlier version of this line quoted only
@@ -143,10 +143,10 @@ prompts. It is a fact about frontier vendor prompts, and it is wrong by an order
 of magnitude for the prompts most people write. B2 is the control: same
 population, different curator, rates in the same region.
 
-One result transfers: across 3,649 files, four corpora and four licences,
+One result transfers: across 3,651 files, four corpora and four licences,
 **three files carry a credential-shaped string and none of the three is a
 system prompt.** CRED is a file count rather than a rate because three out of
-3,649 is not a rate, it is three files, and all three are listed above with a
+3,651 is not a rate, it is three files, and all three are listed above with a
 hand verdict.
 
 ```bash

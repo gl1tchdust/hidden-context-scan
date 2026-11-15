@@ -42,6 +42,26 @@ fetch bigprompt "https://github.com/0xeb/TheBigPromptLibrary" \
 fetch aitools "https://github.com/x1xhlol/system-prompts-and-models-of-ai-tools" \
       "162db92f54d717d8ebd12292e155aeef32bb4b3c" "GPL-3.0"
 
+# Check the trees, do not assume them. On the author's machine Windows
+# Defender quarantines three Hack The Box cheat sheets in bigprompt and
+# re-deletes them after a restore, which moved every B1 rate and took a CI
+# run on Linux to notice. See RESEARCH.md, "And then the antivirus ate the
+# corpus". `git status` is the honest check: it compares the working tree to
+# the pinned commit rather than counting whatever happens to be present.
+for name in bigprompt aitools; do
+  dir="$DEST/$name"
+  [ -d "$dir/.git" ] || continue
+  if [ -n "$(git -C "$dir" status --porcelain)" ]; then
+    echo "WARNING: $dir differs from the pinned commit:" >&2
+    git -C "$dir" status --short >&2
+    echo "Files are missing or modified, so any rate computed from this tree" >&2
+    echo "is not the rate this corpus describes. Restore them with:" >&2
+    echo "  git -C $dir checkout -- ." >&2
+    echo "If they vanish again, something on this machine is deleting them." >&2
+    exit 1
+  fi
+done
+
 cat <<'NOTE'
 
 The four populations, and why they are kept apart:
